@@ -18,7 +18,7 @@ global:
   #   - name: image-pull-secret
 
   # TLS for end-to-end encrypted transport
-  tlsDisable: true
+  tlsDisable: false
 
   # External vault server address for the injector and CSI provider to use.
   # Setting this will disable deployment of a vault server.
@@ -46,7 +46,7 @@ global:
 injector:
   # True if you want to enable vault agent injection.
   # @default: global.enabled
-  enabled: "-"
+  enabled: true
 
   replicas: 1
 
@@ -55,15 +55,16 @@ injector:
 
   # If multiple replicas are specified, by default a leader will be determined
   # so that only one injector attempts to create TLS certificates.
-  leaderElector:
-    enabled: true
+  # leaderElector:
+  #   enabled: true
+  # Commenting out since there's only 1 replica, no HA.
 
   # If true, will enable a node exporter metrics endpoint at /metrics.
   metrics:
     enabled: false
 
   # Deprecated: Please use global.externalVaultAddr instead.
-  externalVaultAddr: ""
+  global.externalVaultAddr: "https://vault.vault.svc:8200"
 
   # image sets the repo and tag of the vault-k8s image to use for the injector.
   image:
@@ -135,12 +136,12 @@ injector:
     # Number of seconds after which the probe times out.
     timeoutSeconds: 5
 
-  # Mount Path of the Vault Kubernetes Auth Method.
-  authPath: "auth/kubernetes"
+  # Mount Path of the Vault Certificate Auth Method.
+  authPath: "auth/cert"
 
   # Configures the log verbosity of the injector.
   # Supported log levels include: trace, debug, info, warn, error
-  logLevel: "info"
+  logLevel: {"info", "debug", "trace", "warn", "error"}
 
   # Configures the log format of the injector. Supported log formats: "standard", "json".
   logFormat: "standard"
@@ -199,15 +200,13 @@ injector:
     # Extra annotations to attach to the webhook
     annotations: {}
 
-  # Deprecated: please use 'webhook.failurePolicy' instead
   # Configures failurePolicy of the webhook. The "unspecified" default behaviour depends on the
   # API Version of the WebHook.
   # To block pod creation while webhook is unavailable, set the policy to `Fail` below.
   # See https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
   #
-  failurePolicy: Ignore
+  webhook.failurePolicy: Ignore
 
-  # Deprecated: please use 'webhook.namespaceSelector' instead
   # namespaceSelector is the selector for restricting the webhook to only
   # specific namespaces.
   # See https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-namespaceselector
@@ -216,9 +215,8 @@ injector:
   # namespaceSelector:
   #    matchLabels:
   #      sidecar-injector: enabled
-  namespaceSelector: {}
+  webhook.namespaceSelector: {}
 
-  # Deprecated: please use 'webhook.objectSelector' instead
   # objectSelector is the selector for restricting the webhook to only
   # specific labels.
   # See https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector
@@ -227,7 +225,7 @@ injector:
   # objectSelector:
   #    matchLabels:
   #      vault-sidecar-injector: enabled
-  objectSelector: {}
+  webhook.objectSelector: {}
 
   # Deprecated: please use 'webhook.annotations' instead
   # Extra annotations to attach to the webhook
@@ -238,7 +236,7 @@ injector:
     # private key to serve the injector webhook. If this is null, then the
     # injector will default to its automatic management mode that will assign
     # a service account to the injector to generate its own certificates.
-    secretName: null
+    secretName: tls-server
 
     # caBundle is a base64-encoded PEM-encoded certificate bundle for the CA
     # that signed the TLS certificate that the webhook serves. This must be set
@@ -357,19 +355,19 @@ injector:
 server:
   # If true, or "-" with global.enabled true, Vault server will be installed.
   # See vault.mode in _helpers.tpl for implementation details.
-  enabled: "-"
+  enabled: true
 
   # [Enterprise Only] This value refers to a Kubernetes secret that you have
   # created that contains your enterprise license. If you are not using an
   # enterprise image or if you plan to introduce the license key via another
   # route, then leave secretName blank ("") or set it to null.
   # Requires Vault Enterprise 1.8 or later.
-  enterpriseLicense:
+  # enterpriseLicense:
     # The name of the Kubernetes secret that holds the enterprise license. The
     # secret must be in the same namespace that Vault is installed into.
-    secretName: ""
+    # secretName: ""
     # The key within the Kubernetes secret that holds the enterprise license.
-    secretKey: "license"
+    # secretKey: "license"
 
   image:
     repository: "hashicorp/vault"
@@ -383,11 +381,11 @@ server:
 
   # Configure the logging verbosity for the Vault server.
   # Supported log levels include: trace, debug, info, warn, error
-  logLevel: ""
+  logLevel: {"info", "debug", "trace", "warn", "error"}
 
   # Configure the logging format for the Vault server.
   # Supported log formats include: standard, json
-  logFormat: ""
+  logFormat: "standard"
   
   # Resource requests, limits, etc. for the server cluster placement. This
   # should map directly to the value of the resources field for a PodSpec.
@@ -576,10 +574,11 @@ server:
 
   # extraEnvironmentVars is a list of extra environment variables to set with the stateful set. These could be
   # used to include variables required for auto-unseal.
-  extraEnvironmentVars: {}
-    # GOOGLE_REGION: global
-    # GOOGLE_PROJECT: myproject
-    # GOOGLE_APPLICATION_CREDENTIALS: /vault/userconfig/myproject/myproject-creds.json
+  extraEnvironmentVars:
+    VAULT_CACERT: "vault/userconfig/tls-ca/ca.crt"
+    VAULT_TLS_CERT: "/vault/userconfig/tls-server/tls.crt"
+    VAULT_TLS_KEY: "/vault/userconfig/tls-server/tls.key"
+    VAULT_ADDR: https://vault.vault.svc:8200
 
   # extraSecretEnvironmentVars is a list of extra environment variables to set with the stateful set.
   # These variables take value from existing Secret objects.
@@ -588,29 +587,25 @@ server:
     #   secretName: vault
     #   secretKey: AWS_SECRET_ACCESS_KEY
 
-  # Deprecated: please use 'volumes' instead.
-  # extraVolumes is a list of extra volumes to mount. These will be exposed
-  # to Vault in the path `/vault/userconfig/<name>/`. The value below is
-  # an array of objects, examples are shown below.
-  extraVolumes: []
-    # - type: secret (or "configMap")
-    #   name: my-secret
-    #   path: null # default is `/vault/userconfig`
-
   # volumes is a list of volumes made available to all containers. These are rendered
   # via toYaml rather than pre-processed like the extraVolumes value.
   # The purpose is to make it easy to share volumes between containers.
-  volumes: null
-  #   - name: plugins
-  #     emptyDir: {}
+  volumes:
+    - type: secret
+      name: tls-server
+    - type: secret
+      name: tls-ca
 
   # volumeMounts is a list of volumeMounts for the main server container. These are rendered
   # via toYaml rather than pre-processed like the extraVolumes value.
   # The purpose is to make it easy to share volumes between containers.
-  volumeMounts: null
-  #   - mountPath: /usr/local/libexec/vault
-  #     name: plugins
-  #     readOnly: true
+  volumeMounts:
+    - name: tls-server
+      mountPath: /vault/userconfig/tls-server
+      readOnly: true
+    - name: tls-ca
+      mountPath: /vault/userconfig/tls-ca
+      readOnly: true
 
   # Affinity Settings
   # Commenting out or setting as empty the affinity variable, will allow
@@ -774,7 +769,7 @@ server:
   dataStorage:
     enabled: true
     # Size of the PVC created
-    size: 10Gi
+    size: 5Gi
     # Location where the PVC will be mounted.
     mountPath: "/vault/data"
     # Name of the storage class to use.  If null it will use the
@@ -803,7 +798,7 @@ server:
   auditStorage:
     enabled: false
     # Size of the PVC created
-    size: 10Gi
+    size: 2Gi
     # Location where the PVC will be mounted.
     mountPath: "/vault/audit"
     # Name of the storage class to use.  If null it will use the
@@ -832,7 +827,7 @@ server:
   # the "file" backend.  This mode is not highly available and should not be scaled
   # past a single replica.
   standalone:
-    enabled: "-"
+    enabled: true
 
     # config is a raw string of default configuration when using a Stateful
     # deployment. Default is to use a PersistentVolumeClaim mounted at /vault/data
@@ -845,11 +840,15 @@ server:
     # https://developer.hashicorp.com/vault/docs/platform/k8s/helm/run#protecting-sensitive-vault-configurations
     config: |-
       ui = true
+      log_level = "debug"
 
       listener "tcp" {
-        tls_disable = 1
         address = "[::]:8200"
         cluster_address = "[::]:8201"
+        tls_disable = "false"
+        tls_cert_file = "/vault/userconfig/tls-server/tls.crt"
+        tls_key_file = "/vault/userconfig/tls-server/tls.key"
+        tls_client_ca_file = "/vault/userconfig/tls-ca/ca.crt"
         # Enable unauthenticated metrics access (necessary for Prometheus Operator)
         #telemetry {
         #  unauthenticated_metrics_access = "true"
@@ -882,7 +881,7 @@ server:
   # different HA backend.
   ha:
     enabled: false
-    replicas: 3
+    replicas: 1
 
     # Set the api_addr configuration for Vault HA
     # See https://developer.hashicorp.com/vault/docs/configuration#api_addr
@@ -914,7 +913,7 @@ server:
         ui = true
 
         listener "tcp" {
-          tls_disable = 1
+          tls_disable = 0
           address = "[::]:8200"
           cluster_address = "[::]:8201"
           # Enable unauthenticated metrics access (necessary for Prometheus Operator)
@@ -941,7 +940,7 @@ server:
       ui = true
 
       listener "tcp" {
-        tls_disable = 1
+        tls_disable = 0
         address = "[::]:8200"
         cluster_address = "[::]:8201"
       }
@@ -1041,7 +1040,7 @@ ui:
   # serviceType can be used to control the type of service created. For
   # example, setting this to "LoadBalancer" will create an external load
   # balancer (for supported K8S installations) to access the UI.
-  enabled: false
+  enabled: true
   publishNotReadyAddresses: true
   # The service should only contain selectors for active Vault pod
   activeVaultPodOnly: false
