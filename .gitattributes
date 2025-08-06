@@ -2,3 +2,4 @@
 *.yml linguist-language=yaml
 
 *.yaml linguist-detectable=true
+*.sh linguist-detectable=false
