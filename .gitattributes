@@ -1,0 +1,4 @@
+*.yaml linguist-language=yaml
+*.yml linguist-language=yaml
+
+*.yaml linguist-detectable=true
